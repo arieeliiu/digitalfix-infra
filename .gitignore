@@ -1,0 +1,12 @@
+# Variables de entorno reales
+.env
+.env.*
+!.env.example
+
+apps/.env
+apps/.env.*
+!apps/.env.example
+
+# Claves y credenciales
+*.pem
+*.key
