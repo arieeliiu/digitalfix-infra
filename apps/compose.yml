@@ -1,0 +1,46 @@
+services:
+
+  bff:
+    build:
+      context: ../../digitalfix-ms-bff
+      dockerfile: Dockerfile
+    image: digitalfix-bff:local
+    ports:
+      - "8080:8080"
+    networks:
+      - digitalfix-backend
+    restart: unless-stopped
+
+  catalog:
+    build:
+      context: ../../digitalfix-ms-catalog
+      dockerfile: Dockerfile
+    image: digitalfix-catalog:local
+    environment:
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${CATALOG_DB_USERNAME}
+      DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+    expose:
+      - "8080"
+    networks:
+      - digitalfix-backend
+    restart: unless-stopped
+
+  workorders:
+    build:
+      context: ../../digitalfix-ms-workorders
+      dockerfile: Dockerfile
+    image: digitalfix-workorders:local
+    environment:
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${WORKORDERS_DB_USERNAME}
+      DB_PASSWORD: ${WORKORDERS_DB_PASSWORD}
+    expose:
+      - "8082"
+    networks:
+      - digitalfix-backend
+    restart: unless-stopped
+
+networks:
+  digitalfix-backend:
+    driver: bridge
