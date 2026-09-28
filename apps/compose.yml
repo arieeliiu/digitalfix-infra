@@ -19,7 +19,7 @@ services:
     environment:
       DB_URL: ${DB_URL}
       DB_USERNAME: ${CATALOG_DB_USERNAME}
-      DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+      DB_PASSWORD: ${CATALOG_DB_PASSWORD:?Configura la contraseña Oracle vigente de Catalog}
     expose:
       - "8080"
     networks:
@@ -34,7 +34,7 @@ services:
     environment:
       DB_URL: ${DB_URL}
       DB_USERNAME: ${WORKORDERS_DB_USERNAME}
-      DB_PASSWORD: ${WORKORDERS_DB_PASSWORD}
+      DB_PASSWORD: ${WORKORDERS_DB_PASSWORD:?Configura la contraseña Oracle vigente de Workorders}
     expose:
       - "8082"
     networks:
