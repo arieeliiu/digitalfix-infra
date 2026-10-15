@@ -1,340 +1,101 @@
 # DigitalFix - Infraestructura
 
-Repositorio encargado de la configuración de infraestructura del backend de DigitalFix.
+Este repositorio contiene el único `docker-compose.yml` del backend. Infraestructura no es un microservicio: Compose construye las imágenes desde los Dockerfile de BFF, Catalog y Workorders y ejecuta los tres contenedores en EC2 o en local.
 
-Actualmente contiene la orquestación mediante Docker Compose de los servicios necesarios para la evaluación:
-
-- `digitalfix-ms-bff`
-- `digitalfix-ms-catalog`
-- `digitalfix-ms-workorders`
-
-Los servicios se ejecutan mediante contenedores Docker y se despliegan en una instancia Amazon EC2.
-
-## Arquitectura actual
+## Estructura requerida
 
 ```text
-Cliente
-  |
-  | HTTP :8080
-  v
-Amazon EC2
-  |
-  └── Docker Compose
-       |
-       ├── BFF :8080
-       |
-       ├── Catalog :8080
-       |      |
-       |      └──────────┐
-       |
-       └── Workorders :8082
-              |          |
-              └──────────┴──> Oracle Database en Amazon RDS
+digitalfix-backend/
+├── digitalfix-infra/
+│   ├── docker-compose.yml
+│   └── apps/
+│       ├── .env.example
+│       └── .env              # Credenciales reales, excluido de Git
+├── digitalfix-ms-bff/
+│   └── Dockerfile
+├── digitalfix-ms-catalog/
+│   └── Dockerfile
+└── digitalfix-ms-workorders/
+    └── Dockerfile
 ```
 
-Los tres contenedores comparten la red interna:
+Los contextos de construcción son relativos al archivo Compose. Ejecuta los comandos siguientes desde `digitalfix-infra`. No ejecutes un Compose separado desde el BFF.
 
-```text
-digitalfix-backend
-```
+## Credenciales
 
-Solo el BFF publica un puerto hacia el exterior.
-
-Catalog y Workorders permanecen accesibles únicamente dentro de la red Docker y se conectan directamente a Oracle RDS para persistencia.
-
-## Estructura
-
-```text
-digitalfix-infra/
-├── apps/
-│   ├── compose.yml
-│   └── .env.example
-├── .gitignore
-└── README.md
-```
-
-Los `Dockerfile` pertenecen a sus respectivos repositorios:
-
-```text
-digitalfix-ms-bff/
-digitalfix-ms-catalog/
-digitalfix-ms-workorders/
-```
-
-## Requisitos
-
-Para ejecución local:
-
-- Docker
-- Docker Compose
-- Acceso de red a Oracle RDS
-
-Para despliegue:
-
-- Instancia Amazon EC2
-- Docker instalado en EC2
-- Docker Compose instalado en EC2
-- Acceso desde EC2 hacia Oracle RDS por TCP 1521
-
-## Variables de entorno
-
-La configuración sensible se administra mediante:
-
-```text
-apps/.env
-```
-
-Este archivo no se almacena en Git.
-
-Se incluye:
-
-```text
-apps/.env.example
-```
-
-para documentar las variables necesarias.
-
-Variables utilizadas:
+Copia `apps/.env.example` a `apps/.env` y completa los tres valores:
 
 ```dotenv
-DB_URL=jdbc:oracle:thin:@//HOST_RDS:1521/SERVICIO
-
-CATALOG_DB_USERNAME=usuario_catalog
-CATALOG_DB_PASSWORD=contraseña_catalog
-
-WORKORDERS_DB_USERNAME=usuario_workorders
-WORKORDERS_DB_PASSWORD=contraseña_workorders
+DB_URL=jdbc:oracle:thin:@//TU_ENDPOINT_RDS:1521/TU_SERVICIO_ORACLE
+DB_USERNAME=usuario_oracle
+DB_PASSWORD='TU_PASSWORD_ORACLE'
 ```
 
-Docker Compose transforma las variables específicas de cada servicio en las variables que esperan las aplicaciones Spring Boot:
+El usuario y sus permisos deben existir previamente en Oracle. El despliegue actual utiliza las mismas credenciales para Catalog y Workorders. Compose entrega a cada servicio `DB_URL`, `DB_USERNAME` y `DB_PASSWORD`, que sus archivos `application.properties` consumen. Las variables obligatorias vacías o ausentes detienen Compose antes del despliegue. No subas `.env` a Git; créalo también en EC2.
 
-```text
-DB_URL
-DB_USERNAME
-DB_PASSWORD
-```
+## Comunicación
 
-No se deben almacenar contraseñas, tokens, archivos `.env` ni claves privadas en el repositorio.
+| Origen | Destino | Configuración en Compose |
+|---|---|---|
+| BFF | `http://catalog:8081` | `DIGITALFIX_CATALOG_URL` |
+| BFF | `http://workorders:8082` | `DIGITALFIX_WORKORDERS_URL` |
+| Workorders | `http://catalog:8081` | `CATALOG_URL` |
+| Catalog y Workorders | Oracle RDS | `DB_URL`, `DB_USERNAME` y `DB_PASSWORD` compartidos |
 
-## Ejecución local
+Los servicios comparten la red bridge `digitalfix-backend`. Docker resuelve los nombres `catalog` y `workorders`. `localhost` dentro de un contenedor apunta al propio contenedor.
 
-Los siguientes repositorios deben estar ubicados en el mismo directorio padre:
+Solo BFF publica `8080:8080`. Catalog escucha en `8081` y Workorders en `8082`, sin publicar puertos al host. `expose` documenta los puertos internos; no cambia el puerto de Spring ni es una barrera entre contenedores de la misma red.
 
-```text
-digitalfix/
-├── digitalfix-infra/
-├── digitalfix-ms-bff/
-├── digitalfix-ms-catalog/
-└── digitalfix-ms-workorders/
-```
+`depends_on` ordena el arranque, pero no garantiza que Spring o RDS estén listos. Espera a que las aplicaciones terminen de iniciar antes de probar.
 
-Desde `digitalfix-infra`:
+## Construcción y ejecución
 
-```powershell
-docker compose --env-file apps\.env -f apps\compose.yml build
-```
-
-Levantar los servicios:
-
-```powershell
-docker compose --env-file apps\.env -f apps\compose.yml up -d
-```
-
-Consultar su estado:
-
-```powershell
-docker compose --env-file apps\.env -f apps\compose.yml ps
-```
-
-Consultar logs:
-
-```powershell
-docker compose --env-file apps\.env -f apps\compose.yml logs
-```
-
-Detener los servicios:
-
-```powershell
-docker compose --env-file apps\.env -f apps\compose.yml down
-```
-
-## Puertos
-
-| Servicio | Puerto interno | Publicado |
-|---|---:|---:|
-| BFF | 8080 | 8080 |
-| Catalog | 8080 | No |
-| Workorders | 8082 | No |
-| Oracle RDS | 1521 | Fuera de Docker Compose |
-
-Catalog y Workorders no se publican directamente hacia Internet.
-
-El BFF funciona como punto de entrada actual al backend.
-
-## Persistencia
-
-Oracle Database se ejecuta como servicio administrado en Amazon RDS y no forma parte de Docker Compose.
-
-Catalog y Workorders reciben la configuración JDBC mediante variables de entorno.
-
-Durante las pruebas se verificó correctamente la conexión con:
-
-- Oracle JDBC Driver
-- Oracle Database 19c
-- Amazon RDS
-- Hibernate / Spring Data JPA
-
-Los datos permanecen almacenados en RDS independientemente del ciclo de vida de los contenedores.
-
-## Despliegue en Amazon EC2
-
-Se utilizó una instancia Amazon Linux 2023 dentro de la misma VPC que Oracle RDS.
-
-La EC2 ejecuta:
-
-```text
-Docker
-└── Docker Compose
-    ├── BFF
-    ├── Catalog
-    └── Workorders
-```
-
-Los repositorios se clonan dentro de:
-
-```text
-~/digitalfix/
-```
-
-### Construcción de imágenes
-
-Debido a los recursos limitados de la instancia utilizada, las imágenes se construyeron individualmente:
+Validar sin mostrar credenciales:
 
 ```bash
-docker compose --env-file apps/.env -f apps/compose.yml build bff
-
-docker compose --env-file apps/.env -f apps/compose.yml build catalog
-
-docker compose --env-file apps/.env -f apps/compose.yml build workorders
+docker compose --env-file apps/.env -f docker-compose.yml config --quiet
 ```
 
-Posteriormente se levantaron en conjunto:
+Construir y levantar:
 
 ```bash
-docker compose --env-file apps/.env -f apps/compose.yml up -d
+docker compose --env-file apps/.env -f docker-compose.yml up -d --build
 ```
 
-### Memoria auxiliar
+En una EC2 con poca memoria, construir secuencialmente:
 
-La instancia utilizada dispone de memoria limitada, por lo que se configuraron 2 GiB de swap para evitar que el proceso de compilación agotara la memoria disponible.
-
-La compilación individual de los servicios evita además ejecutar simultáneamente tres procesos Maven.
-
-## Seguridad de red
-
-El Security Group de EC2 permite:
-
-```text
-TCP 22   → acceso SSH administrativo
-TCP 8080 → acceso al BFF
+```bash
+docker compose --env-file apps/.env -f docker-compose.yml build bff
+docker compose --env-file apps/.env -f docker-compose.yml build catalog
+docker compose --env-file apps/.env -f docker-compose.yml build workorders
+docker compose --env-file apps/.env -f docker-compose.yml up -d
 ```
 
-Catalog y Workorders no poseen puertos públicos.
+Inspeccionar y detener:
 
-El Security Group asociado a RDS permite:
-
-```text
-TCP 1521 → desde el Security Group de la EC2
+```bash
+docker compose --env-file apps/.env -f docker-compose.yml ps
+docker compose --env-file apps/.env -f docker-compose.yml logs --tail=100 bff catalog workorders
+docker compose --env-file apps/.env -f docker-compose.yml down
 ```
 
-De esta forma, los servicios desplegados en EC2 pueden conectarse a Oracle sin publicar la base de datos de forma general hacia Internet.
+Al migrar desde cualquiera de los Compose anteriores, detén primero ese despliegue con su archivo y nombre de proyecto originales para liberar el puerto 8080. No elimines volúmenes. El nuevo archivo en la raíz puede usar un nombre de proyecto distinto al antiguo archivo dentro de `apps`.
 
-## Seguridad JWT
+## Comprobación funcional
 
-El BFF funciona como OAuth 2.0 Resource Server y valida tokens JWT emitidos por Microsoft Entra ID.
+Desde el host que ejecuta Docker:
 
-Como prueba del despliegue se consultó:
-
-```http
-GET /api/perfil
+```bash
+curl -i http://localhost:8080/healthz
+curl -i http://localhost:8080/api/perfil
 ```
 
-sin enviar un access token.
+Se espera `200` en salud y `401` en perfil sin token. Esto solo verifica el BFF. Para comprobar comunicación y persistencia, usa un access token válido de Entra con el scope y rol correspondientes y consulta `/api/catalog/services` y `/api/workorders` a través del BFF. Prueba también una operación de órdenes que utilice Catalog.
 
-El BFF desplegado en EC2 respondió:
+## EC2 y dependencias externas
 
-```text
-HTTP/1.1 401
-WWW-Authenticate: Bearer
-```
+EC2 necesita Docker Engine y Compose, acceso a las imágenes base y salida HTTPS a Entra. Catalog y Workorders requieren acceso a RDS por TCP 1521; permite ese acceso en el Security Group de RDS desde el Security Group de EC2. Oracle RDS no es un contenedor de este Compose.
 
-Este resultado verifica que:
+API Gateway y su integración con EC2 se configuran por separado. Este archivo no provisiona AWS, certificados TLS ni Entra ID. El BFF valida el JWT y reenvía el Bearer a los servicios. La configuración de red de Docker no sustituye la autorización de las aplicaciones.
 
-- el BFF está accesible desde fuera de EC2;
-- el contenedor funciona correctamente;
-- Spring Security permanece activo después de la dockerización;
-- un endpoint protegido rechaza solicitudes sin JWT.
-
-## Verificaciones realizadas
-
-Se comprobó:
-
-- construcción correcta de las imágenes Docker de BFF, Catalog y Workorders;
-- ejecución simultánea mediante Docker Compose;
-- red interna compartida entre los contenedores;
-- exposición pública únicamente del BFF;
-- conexión de Catalog con Oracle RDS;
-- conexión de Workorders con Oracle RDS;
-- persistencia externa mediante RDS;
-- exclusión del archivo `.env` de Git;
-- despliegue de los tres servicios en Amazon EC2;
-- acceso remoto al BFF desplegado;
-- respuesta `401 Unauthorized` al consultar un endpoint protegido sin JWT.
-
-## Fuera de alcance de esta configuración
-
-Esta tarea no implementa:
-
-- AWS API Gateway;
-- JWT Authorizer de API Gateway;
-- integración completa Angular → API Gateway → BFF;
-- comunicación funcional BFF → Catalog / Workorders;
-- RabbitMQ;
-- Kafka.
-
-Estos componentes se implementan en tareas separadas del proyecto.
-
-## Flujo actual
-
-La infraestructura implementada actualmente corresponde a:
-
-```text
-Cliente
-   |
-   v
-EC2 :8080
-   |
-   v
-BFF
-```
-
-Dentro de EC2 también se encuentran desplegados Catalog y Workorders.
-
-La arquitectura final incorporará posteriormente:
-
-```text
-Angular
-   |
-   v
-API Gateway
-   |
-   v
-BFF
-   |
-   +---------> Catalog
-   |
-   +---------> Workorders
-                  |
-                  v
-              Oracle RDS
-```
+Notify, Audit y Report no forman parte de este despliegue.

@@ -10,3 +10,6 @@ apps/.env.*
 # Claves y credenciales
 *.pem
 *.key
+
+# Configuración local del IDE
+.idea/
