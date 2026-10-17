@@ -1,0 +1,61 @@
+name: digitalfix-mq
+
+x-rabbitmq: &rabbitmq
+  image: rabbitmq:4.2.9-management
+  restart: unless-stopped
+  entrypoint: ["/bin/sh", "/etc/rabbitmq/start-node.sh"]
+  stop_grace_period: 120s
+  networks:
+    - messaging
+  healthcheck:
+    test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
+    interval: 30s
+    timeout: 20s
+    retries: 5
+    start_period: 120s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-environment: &environment
+  RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?Configura el usuario en mq/.env}
+  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Configura una clave unica en mq/.env}
+  RABBITMQ_DEFAULT_VHOST: digitalfix
+  RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Configura una cookie aleatoria compartida en mq/.env}
+  RABBITMQ_MNESIA_DIR: /var/lib/rabbitmq/mnesia/node
+
+services:
+  rabbitmq1:
+    <<: *rabbitmq
+    hostname: rabbitmq1
+    environment:
+      <<: *environment
+      RABBITMQ_NODENAME: rabbit@rabbitmq1
+    ports:
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq1-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./start-node.sh:/etc/rabbitmq/start-node.sh:ro
+
+  rabbitmq2:
+    <<: *rabbitmq
+    hostname: rabbitmq2
+    environment:
+      <<: *environment
+      RABBITMQ_NODENAME: rabbit@rabbitmq2
+    volumes:
+      - rabbitmq2-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./start-node.sh:/etc/rabbitmq/start-node.sh:ro
+
+networks:
+  messaging:
+    name: digitalfix-messaging
+    driver: bridge
+
+volumes:
+  rabbitmq1-data:
+  rabbitmq2-data:
