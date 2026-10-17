@@ -2,7 +2,7 @@
 
 Repositorio encargado de centralizar la configuración de despliegue del backend de DigitalFix.
 
-Contiene el único `docker-compose.yml` utilizado para construir y ejecutar:
+El `docker-compose.yml` de aplicaciones se conserva para construir y ejecutar:
 
 ```text
 BFF
@@ -11,6 +11,18 @@ Workorders
 ```
 
 Infraestructura no es un microservicio.
+
+## Evaluación 2: RabbitMQ
+
+La infraestructura de mensajería está separada en [`mq/compose.yml`](mq/compose.yml).
+Incluye dos nodos RabbitMQ 4.2.9, descubrimiento automático, Management UI local,
+volúmenes persistentes y la red `digitalfix-messaging`. No modifica ni inicia las
+aplicaciones de la Evaluación 1.
+
+- [Instalación, operación, verificación y EC2](mq/README.md)
+- [Evidencias y estado del Paso 1](mq/EVIDENCIAS.md)
+
+Las secciones siguientes describen el despliegue de aplicaciones existente.
 
 ## Integrantes
 
