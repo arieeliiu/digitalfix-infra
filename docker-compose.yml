@@ -1,3 +1,16 @@
+# Conserva el proyecto del backend existente; usar -p solo si el host tiene otro nombre.
+name: apps
+
+x-rabbit: &rabbit
+  RABBITMQ_ADDRESSES: rabbitmq1:5672,rabbitmq2:5672
+  RABBITMQ_VHOST: digitalfix
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   bff:
@@ -16,6 +29,12 @@ services:
     networks:
       - digitalfix-backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   catalog:
     build:
@@ -38,6 +57,10 @@ services:
       dockerfile: Dockerfile
     image: digitalfix-workorders:local
     environment:
+      <<: *rabbit
+      DIGITALFIX_RABBIT_ENABLED: "true"
+      RABBITMQ_USERNAME: ${WORKORDERS_RABBITMQ_USERNAME:?Configura usuario exclusivo de Workorders}
+      RABBITMQ_PASSWORD: ${WORKORDERS_RABBITMQ_PASSWORD:?Configura contraseña de Workorders}
       DB_URL: ${DB_URL:?Configura DB_URL en apps/.env}
       DB_USERNAME: ${DB_USERNAME:?Configura DB_USERNAME en apps/.env}
       DB_PASSWORD: ${DB_PASSWORD:?Configura DB_PASSWORD en apps/.env}
@@ -48,8 +71,82 @@ services:
       - "8082"
     networks:
       - digitalfix-backend
+      - digitalfix-messaging
     restart: unless-stopped
+
+  notify:
+    build: ../digitalfix-ms-notify
+    image: digitalfix-notify:local
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      <<: *rabbit
+      RABBITMQ_USERNAME: ${NOTIFY_RABBITMQ_USERNAME:?Configura usuario exclusivo de Notify}
+      RABBITMQ_PASSWORD: ${NOTIFY_RABBITMQ_PASSWORD:?Configura contraseña de Notify}
+      SMTP_HOST: ${SMTP_HOST:?Configura servidor SMTP}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      SMTP_FROM: ${SMTP_FROM:?Configura remitente autorizado}
+    volumes:
+      - notify-data:/data
+    networks:
+      - digitalfix-messaging
+    logging: *logging
+
+  report:
+    build: ../digitalfix-ms-report
+    image: digitalfix-report:local
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      <<: *rabbit
+      RABBITMQ_USERNAME: ${REPORT_RABBITMQ_USERNAME:?Configura usuario exclusivo de Report}
+      RABBITMQ_PASSWORD: ${REPORT_RABBITMQ_PASSWORD:?Configura contraseña de Report}
+    volumes:
+      - report-data:/data
+    networks:
+      - digitalfix-messaging
+    logging: *logging
+
+  rabbit-admin:
+    build: ../digitalfix-ms-rabbit-admin
+    image: digitalfix-rabbit-admin:local
+    restart: unless-stopped
+    environment:
+      <<: *rabbit
+      RABBITMQ_USERNAME: ${ADMIN_RABBITMQ_USERNAME:?Configura usuario exclusivo de Rabbit Admin}
+      RABBITMQ_PASSWORD: ${ADMIN_RABBITMQ_PASSWORD:?Configura contraseña de Rabbit Admin}
+      ENTRA_ISSUER: ${ENTRA_ISSUER:?Configura issuer de Entra}
+      ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?Configura audiencia de la API}
+    ports:
+      - "127.0.0.1:8085:8085"
+    networks:
+      - digitalfix-messaging
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8085/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging: *logging
 
 networks:
   digitalfix-backend:
     driver: bridge
+  digitalfix-messaging:
+    external: true
+    name: digitalfix-messaging
+
+# Los nombres físicos se inspeccionaron antes de centralizar. No crear volúmenes vacíos
+# para sustituir datos existentes. External hace fallar el arranque si falta el volumen.
+volumes:
+  notify-data:
+    external: true
+    name: ${NOTIFY_VOLUME_NAME:-digitalfix-notify_notify-data}
+  report-data:
+    external: true
+    name: ${REPORT_VOLUME_NAME:-digitalfix-report_report-data}
