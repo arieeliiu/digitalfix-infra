@@ -13,3 +13,6 @@ apps/.env.*
 
 # Configuración local del IDE
 .idea/
+*.log
+__pycache__/
+evidencias-locales/
