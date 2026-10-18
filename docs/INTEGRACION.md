@@ -97,6 +97,12 @@ el productor detenido. `depends_on` por sí solo no verifica bindings ni prepara
 
 ## 4. Iniciar productores y API privada
 
+En la inspección local, el Catalog antiguo escucha 8080 y usa una imagen anterior.
+El código actual compila para 8081, que es el puerto correcto de este Compose.
+Recrear Catalog con la imagen construida antes de dar tráfico a Workorders/BFF;
+no conservar accidentalmente el contenedor antiguo ni cambiar las URLs a 8080.
+La conectividad Oracle de la versión nueva queda como validación autorizada posterior.
+
 ```powershell
 docker compose --env-file apps/.env -f docker-compose.yml up -d catalog workorders bff rabbit-admin
 docker compose --env-file apps/.env -f docker-compose.yml ps
