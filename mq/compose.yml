@@ -1,61 +1,49 @@
-name: digitalfix-mq
-
-x-rabbitmq: &rabbitmq
-  image: rabbitmq:4.2.9-management
-  restart: unless-stopped
-  entrypoint: ["/bin/sh", "/etc/rabbitmq/start-node.sh"]
-  stop_grace_period: 120s
-  networks:
-    - messaging
-  healthcheck:
-    test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms && rabbitmq-diagnostics -q check_port_connectivity"]
-    interval: 30s
-    timeout: 20s
-    retries: 5
-    start_period: 120s
-  logging:
-    driver: json-file
-    options:
-      max-size: "10m"
-      max-file: "3"
-
-x-environment: &environment
-  RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?Configura el usuario en mq/.env}
-  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Configura una clave unica en mq/.env}
-  RABBITMQ_DEFAULT_VHOST: digitalfix
-  RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Configura una cookie aleatoria compartida en mq/.env}
-  RABBITMQ_MNESIA_DIR: /var/lib/rabbitmq/mnesia/node
-
 services:
-  rabbitmq1:
-    <<: *rabbitmq
-    hostname: rabbitmq1
+  rabbit1:
+    image: rabbitmq:3.13-management
+    container_name: rabbit1
+    hostname: rabbit1
+    restart: unless-stopped
     environment:
-      <<: *environment
-      RABBITMQ_NODENAME: rabbit@rabbitmq1
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
     ports:
-      - "127.0.0.1:15672:15672"
+      - "5672:5672"
+      - "15672:15672"
     volumes:
-      - rabbitmq1-data:/var/lib/rabbitmq
-      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./start-node.sh:/etc/rabbitmq/start-node.sh:ro
+      - rabbit1_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-cluster.conf:ro
+    networks: [mqnet]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
-  rabbitmq2:
-    <<: *rabbitmq
-    hostname: rabbitmq2
+  rabbit2:
+    image: rabbitmq:3.13-management
+    container_name: rabbit2
+    hostname: rabbit2
+    restart: unless-stopped
+    depends_on:
+      rabbit1:
+        condition: service_healthy
     environment:
-      <<: *environment
-      RABBITMQ_NODENAME: rabbit@rabbitmq2
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    ports:
+      - "5673:5672"
+      - "15673:15672"
     volumes:
-      - rabbitmq2-data:/var/lib/rabbitmq
-      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./start-node.sh:/etc/rabbitmq/start-node.sh:ro
+      - rabbit2_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-cluster.conf:ro
+    networks: [mqnet]
 
 networks:
-  messaging:
-    name: digitalfix-messaging
-    driver: bridge
+  mqnet:
 
 volumes:
-  rabbitmq1-data:
-  rabbitmq2-data:
+  rabbit1_data:
+  rabbit2_data:
