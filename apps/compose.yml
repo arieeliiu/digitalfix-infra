@@ -1,0 +1,137 @@
+# infra/apps/compose.yml  ->  ec2-apps
+# Servicios: bff, workorders, catalog, report, notify
+# Broker RabbitMQ en ec2-mq (rabbit1:5672 / rabbit2:5673), resuelto vía extra_hosts.
+# Los nombres "catalog" y "workorders" son los que usan las URLs del código.
+# Uso: docker compose --env-file .env up -d --build   (desde infra/apps)
+
+x-base: &base
+  restart: unless-stopped
+  networks: [appnet]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+# rabbit1 / rabbit2 -> IP privada de ec2-mq
+x-rabbit-hosts: &rabbit-hosts
+  - "rabbit1:${RABBITMQ_HOST:?Configura RABBITMQ_HOST (IP privada de ec2-mq)}"
+  - "rabbit2:${RABBITMQ_HOST:?Configura RABBITMQ_HOST (IP privada de ec2-mq)}"
+
+# Comunes a los clientes RabbitMQ; usuario/contraseña van por servicio.
+x-rabbit-env: &rabbit-env
+  RABBITMQ_ADDRESSES: rabbit1:5672,rabbit2:5673
+  RABBITMQ_VHOST: digitalfix
+
+# Nombres iguales a spring.datasource.* de catalog y workorders.
+x-db-env: &db-env
+  DB_URL: ${DB_URL:?Configura DB_URL}
+  DB_USERNAME: ${DB_USERNAME:?Configura DB_USERNAME}
+  DB_PASSWORD: ${DB_PASSWORD:?Configura DB_PASSWORD}
+
+services:
+  bff:
+    <<: *base
+    build: ../../digitalfix-ms-bff
+    image: digitalfix/bff:local
+    container_name: bff
+    ports:
+      - "8080:8080"              # único puerto publicado (API Gateway)
+    mem_limit: 512m
+    depends_on:
+      workorders: { condition: service_healthy }
+      catalog:    { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  workorders:
+    <<: *base
+    build: ../../digitalfix-ms-workorders
+    image: digitalfix/workorders:local
+    container_name: workorders
+    expose: ["8082"]
+    mem_limit: 512m
+    extra_hosts: *rabbit-hosts
+    environment:                       # productor
+      <<: [*db-env, *rabbit-env]
+      DIGITALFIX_RABBIT_ENABLED: "true"
+      RABBITMQ_USERNAME: ${WORKORDERS_RABBITMQ_USERNAME:?Configura usuario Rabbit de Workorders}
+      RABBITMQ_PASSWORD: ${WORKORDERS_RABBITMQ_PASSWORD:?Configura contraseña Rabbit de Workorders}
+    depends_on:
+      catalog: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8082 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  catalog:
+    <<: *base
+    build: ../../digitalfix-ms-catalog
+    image: digitalfix/catalog:local
+    container_name: catalog
+    expose: ["8081"]
+    mem_limit: 512m
+    environment:
+      <<: *db-env
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8081 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  notify:                              # consumidor puro: sin puertos
+    <<: *base
+    build: ../../digitalfix-ms-notify
+    image: digitalfix/notify:local
+    container_name: notify
+    mem_limit: 512m
+    stop_grace_period: 60s
+    extra_hosts: *rabbit-hosts
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_USERNAME: ${NOTIFY_RABBITMQ_USERNAME:?Configura usuario Rabbit de Notify}
+      RABBITMQ_PASSWORD: ${NOTIFY_RABBITMQ_PASSWORD:?Configura contraseña Rabbit de Notify}
+      SMTP_HOST: ${SMTP_HOST:?Configura SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      SMTP_FROM: ${SMTP_FROM:?Configura SMTP_FROM}
+    volumes:
+      - notify-data:/data
+
+  report:                              # consumidor: sin puertos
+    <<: *base
+    build: ../../digitalfix-ms-report
+    image: digitalfix/report:local
+    container_name: report
+    mem_limit: 512m
+    stop_grace_period: 60s
+    extra_hosts: *rabbit-hosts
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_USERNAME: ${REPORT_RABBITMQ_USERNAME:?Configura usuario Rabbit de Report}
+      RABBITMQ_PASSWORD: ${REPORT_RABBITMQ_PASSWORD:?Configura contraseña Rabbit de Report}
+    volumes:
+      - report-data:/data
+
+networks:
+  appnet:
+    driver: bridge
+
+# Volúmenes existentes con PDFs e idempotencia. External hace fallar el arranque
+# si faltan, en vez de crear volúmenes vacíos.
+volumes:
+  notify-data:
+    external: true
+    name: ${NOTIFY_VOLUME_NAME:-digitalfix-notify_notify-data}
+  report-data:
+    external: true
+    name: ${REPORT_VOLUME_NAME:-digitalfix-report_report-data}

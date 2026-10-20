@@ -16,3 +16,4 @@ apps/.env.*
 *.log
 __pycache__/
 evidencias-locales/
+*.env
