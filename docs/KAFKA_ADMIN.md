@@ -53,8 +53,11 @@ validación externa, igual que el despliegue AWS.
 La imagen `digitalfix/kafka-admin:local` se construyó y arrancó en esta red Docker:
 `/healthz` respondió 200 y la API sin token 401, con usuario de runtime `digitalfix`.
 Solo se inició ese contenedor con issuer/JWKS locales de prueba; se retiró al terminar.
-El CRUD autenticado se verificó mediante el servidor HTTP real de la prueba Java,
-no mediante tokens de Entra ni una sesión autenticada dentro del contenedor.
+El CRUD autenticado también pasó dentro de la imagen Docker con brokers internos
+`kafka1:29092,kafka2:29092,kafka3:29092`, JWT locales y JWKS efímero accesible desde
+`host.docker.internal`. Se repitieron permisos, retención y visibilidad en Kafka UI.
+La variante se ejecuta con `-Ddigitalfix.pruebas.docker=true` (ver README del servicio).
+No utiliza tokens de Entra ni convierte las claves de prueba en configuración normal.
 
 Ejemplos de endpoints y cuerpos están en el README del servicio. Suprimir un
 tópico borra sus registros; la demostración debe utilizar su propio tópico temporal.
