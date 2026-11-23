@@ -3,13 +3,15 @@
 Clúster de streaming para analítica y auditoría (Caso 6, §7 y §9).
 Base: Guía 3.2.1 (1 Zookeeper + 1 broker), ampliada a 3 nodos de cada uno.
 
-> **Estado:** solo **local** (Docker Desktop) hasta la presentación del 1 de diciembre de 2026.
-> El despliegue en `ec2-kafka` queda para después (ver [Al desplegar en EC2](#al-desplegar-en-ec2)).
+> **Estado:** configuración local para Docker Desktop. El despliegue cloud y su
+> demostración, exigidos por EP6, quedan pendientes de una fase coordinada.
+> [Flujo y contratos objetivo](CONTRATOS.md): responsabilidades de ambos tópicos,
+> diferencias con la configuración actual y verificaciones pendientes (Infra #15).
 
 ## Arquitectura
 
 ```text
-Tu PC (IntelliJ: Workorders, ms-audit, ms-report)
+Tu PC (IntelliJ: Workorders y ms-audit; ms-report sigue usando RabbitMQ)
   localhost:9092 -> kafka1      localhost:8090 -> Kafka UI
   localhost:9093 -> kafka2
   localhost:9094 -> kafka3
@@ -43,29 +45,35 @@ red kafkanet (interna)
 ## Tópicos (Caso §9)
 
 Los crea `kafka-init-topicos` con `kafka-topics --create --if-not-exists` (se puede repetir sin error).
+La tabla describe el Compose actual, no todos los flujos implementados.
+`--if-not-exists` no modifica la configuración de un tópico existente.
 
 | Tópico | Part. | RF | `cleanup.policy` | `retention.ms` | Propósito |
 |---|---|---|---|---|---|
 | `workorders.events` | 3 | 3 | `delete` | 604800000 (7 días) | Eventos de la orden. Key = `workorderId` (orden por orden de trabajo) |
-| `audit.timeline` | 3 | 3 | `compact,delete` | 2592000000 (30 días) | Historial quién / qué / cuándo / desde dónde |
+| `audit.timeline` | 3 | 3 | `compact,delete` | 2592000000 (30 días) | Pendiente: auditoría de ediciones (ver contrato objetivo) |
 | `workorders.events.audit.DLT` | 3 | 3 | `delete` | 1209600000 (14 días) | Fallidos definitivos de ms-audit |
-| `workorders.events.report.DLT` | 3 | 3 | `delete` | 1209600000 (14 días) | Fallidos definitivos de ms-report |
+| `workorders.events.report.DLT` | 3 | 3 | `delete` | 1209600000 (14 días) | Reservado; Report no tiene consumidor Kafka |
 
 - La retención usa el máximo de cada rango del caso (3-7, 14-30, 7-14 días).
-- **DLT por consumidor:** `DeadLetterPublishingRecoverer` usa por defecto `<tópico>.DLT` (PPT 3.3.3),
-  lo que haría que ms-audit y ms-report compartan un solo DLT. Cada consumidor debe configurar
-  el recoverer para publicar en **su** DLT.
-- Falta decidir quién consume `audit.timeline`; su DLT se agrega cuando se defina.
+- **DLT por consumidor y origen:** Audit configura un destino propio en vez del
+  valor por defecto `<tópico>.DLT`. Si otro grupo se incorpora en el futuro, deberá
+  tener un DLT independiente para no mezclar sus fallos con los de Audit.
+- `audit.timeline` aún no tiene productor/consumidor. El [contrato objetivo](CONTRATOS.md)
+  define ediciones publicadas por Workorders y consumidas por Audit, su DLT propio y
+  el cambio pendiente de `compact,delete` a `delete` para conservar el historial.
 
 ### Consumer groups
 
 | Servicio | `group.id` | Lee |
 |---|---|---|
-| ms-audit | `audit` | `workorders.events` |
-| ms-report | `report` | `workorders.events` |
+| ms-audit (implementado) | `audit` | `workorders.events` |
+| ms-audit (pendiente) | `audit` | `audit.timeline` |
 
-Grupos distintos: **cada grupo recibe todos los eventos**. Dentro de un grupo, las instancias
-se reparten las 3 particiones (máximo 3 consumidores activos, PPT 3.3.1).
+Dentro de un grupo, las instancias se reparten las particiones. La suscripción actual
+del código abarca 3 particiones y hasta 3 consumidores con trabajo asignado; al añadir
+el segundo tópico habrá 6 particiones en la suscripción. Otro grupo leería de forma
+independiente. No existe todavía un grupo `report` en el código de Report.
 
 ## Uso (desde la raíz de `digitalfix-infra`)
 
@@ -108,7 +116,7 @@ docker compose -f kafka/compose.yml stop
 
 ## Al desplegar en EC2
 
-Pendiente para después de la presentación:
+Pendiente para la fase de despliegue; no se realiza en la issue #15:
 
 - En `KAFKA_ADVERTISED_LISTENERS`, reemplazar `localhost` por la IP privada de `ec2-kafka`
   en el listener `PLAINTEXT_HOST`.
