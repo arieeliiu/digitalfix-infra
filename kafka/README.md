@@ -40,7 +40,7 @@ red kafkanet (interna)
 | `KAFKA_AUTO_CREATE_TOPICS_ENABLE` | `false` | `false` | Los tópicos se crean con la configuración del caso |
 | Kafka UI | 8080 | 8090 | El BFF ocupa 8080 en local |
 
-## Tópicos (Caso §9)
+## Tópicos (configuración inicial; ver actualización al final)
 
 Los crea `kafka-init-topicos` con `kafka-topics --create --if-not-exists` (se puede repetir sin error).
 
@@ -116,3 +116,11 @@ Pendiente para después de la presentación:
   Revisar 9093/9094 o dejar un único puerto externo.
 - Kafka UI no debe quedar expuesto a Internet.
 - Las apps reciben los brokers por variable de entorno (`bootstrap-servers`), nunca fijos en el código.
+
+## Actualización de configuración e integración local (Infra #12)
+
+La [guía de operación actual](OPERACION.md) documenta los listeners configurables,
+la política `delete` de ambos tópicos, el DLT de timeline y las pruebas reales.
+Sustituye los valores iniciales de la tabla anterior. Las aplicaciones de Audit y
+Workorders se completan en sus propios PR; esta infraestructura no demuestra aún
+el recorrido hasta Oracle ni la funcionalidad del segundo tópico en los servicios.
