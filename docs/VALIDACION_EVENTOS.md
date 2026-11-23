@@ -50,6 +50,11 @@ reales. Catalog aislado en la prueba de Workorders; JWT firmados con RSA local.
 | Indisponibilidad | Audit detenido: BFF devuelve 503 controlado |
 | Angular | Vista renderizada en Vitest con HttpClient real a BFF; muestra transición y edición y realiza nueva consulta. No utiliza mock del cliente ni del backend |
 
+Se probó además una copia temporal de la combinación de Audit #4/#5 (árbol
+`7486e0061d6eb1616086396ecf9e731cbf565fb6`), sin fusionar ramas: **25 pruebas
+pasaron, sin omisiones**, incluyendo integridad/concurrencia y los dos casos Kafka
+reales. Log local `evidencias-locales/audit-combinado.log`.
+
 Herramientas y resultados detallados permanecen en `evidencias-locales/` (ignorado).
 La primera ejecución del verificador detectó dos errores en la herramienta:
 particiones vacías sin offset confirmado y salida de grupo diferida al terminar
