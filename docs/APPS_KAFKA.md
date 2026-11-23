@@ -72,7 +72,11 @@ Antes de activar aplicaciones:
 1. Revisar/mergear los PR de Infra #16/#17, Audit #4/#5 y Workorders #15. Este PR
    solo configura el conjunto y no integra esas ramas en `main`.
 2. Revisar migraciones de historial y origen Kafka en un entorno autorizado de Oracle.
-   Los servicios conservan `ddl-auto=update`: arrancarlos puede ejecutar DDL.
+   Compose utiliza `JPA_DDL_AUTO=validate` por defecto para los tres servicios JPA:
+   un esquema incompatible impide el arranque, sin modificarlo. El valor `update`
+   queda reservado a una base local aislada preparada expresamente para pruebas.
+   La ejecución Java fuera de Compose conserva su configuración propia; revisar
+   `spring.jpa.hibernate.ddl-auto` antes de conectarla a una base externa.
 3. Inspeccionar redes, volúmenes y contenedores activos. No iniciar consumidores
    duplicados con los Compose independientes. No recrear RabbitMQ desde un archivo
    histórico sin contrastar su versión y volúmenes con el clúster existente.
