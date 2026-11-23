@@ -1,6 +1,6 @@
 # DigitalFix — Infraestructura integrada, Evaluación 2
 
-El Compose raíz integra BFF, Catalog, Workorders, Notify, Report y Rabbit Admin.
+El Compose raíz integra BFF, Catalog, Workorders, Audit, Notify, Report y Rabbit Admin.
 RabbitMQ conserva su Compose independiente en [mq/compose.yml](mq/compose.yml).
 Kafka (Zookeeper ×3, Kafka ×3, Kafka UI y tópicos del caso) vive en [kafka/compose.yml](kafka/compose.yml);
 ver [kafka/README.md](kafka/README.md).
@@ -80,3 +80,8 @@ volúmenes o mensajes para repetir una demostración.
 No usar `docker compose down -v` ni `docker volume prune`. No escalar Notify/Report
 ni iniciar simultáneamente sus Compose independientes y el central.
 Los PR y merges los realiza el usuario; el Paso 6 solo se publica en ramas feature.
+
+Para la configuración actual de aplicaciones con Kafka y Audit, consultar
+[APPS_KAFKA.md](docs/APPS_KAFKA.md): redes externas, variables nuevas, dependencias de
+PR y comprobaciones realizadas sin arrancar contra RDS. La evidencia histórica del
+Paso 6 no certifica los servicios nuevos ni sustituye la validación EP5/EP6.
