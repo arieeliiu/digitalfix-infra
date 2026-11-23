@@ -4,6 +4,8 @@ El Compose raíz integra BFF, Catalog, Workorders, Notify, Report y Rabbit Admin
 RabbitMQ conserva su Compose independiente en [mq/compose.yml](mq/compose.yml).
 Kafka (Zookeeper ×3, Kafka ×3, Kafka UI y tópicos del caso) vive en [kafka/compose.yml](kafka/compose.yml);
 ver [kafka/README.md](kafka/README.md).
+El [flujo y los contratos de los dos tópicos](kafka/CONTRATOS.md) distinguen lo
+implementado de los cambios pendientes para completar Kafka en EP5/EP6.
 El código/configuración del Paso 6 no equivale a un despliegue AWS realizado.
 
 - [Estado, commits, pruebas y pendientes del Paso 6](docs/PASO6_ESTADO.md)
