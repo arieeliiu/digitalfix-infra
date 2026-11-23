@@ -1,0 +1,23 @@
+# Puede arrancarse solo: no inicia aplicaciones con conexión a Oracle.
+services:
+  kafka-admin:
+    build: ${KAFKA_ADMIN_BUILD_CONTEXT:-../../digitalfix-ms-kafka-admin}
+    image: digitalfix/kafka-admin:local
+    restart: unless-stopped
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:${KAFKA_ADMIN_PORT:-8086}:8086"
+    networks: [kafka]
+    environment:
+      SERVER_PORT: "8086"
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?Configura brokers internos}
+      ENTRA_ISSUER: ${ENTRA_ISSUER:?Configura emisor JWT}
+      ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?Configura audiencia JWT}
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  kafka:
+    external: true
+    name: ${KAFKA_NETWORK_NAME:?Configura la red externa Kafka}
