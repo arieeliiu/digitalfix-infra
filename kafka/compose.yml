@@ -1,0 +1,171 @@
+services:
+  # --- Zookeeper ---
+  zookeeper1:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper1
+    hostname: zookeeper1
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_CLIENT_PORT: 2181       # puerto por donde se conectan los brokers
+      ZOOKEEPER_TICK_TIME: 2000         # unidad de tiempo base (ms)
+      # Los 3 nodos que forman el ensamble: host:puerto_sync:puerto_eleccion
+      ZOOKEEPER_SERVERS: zookeeper1:2888:3888;zookeeper2:2888:3888;zookeeper3:2888:3888
+    volumes:
+      - zookeeper1_data:/var/lib/zookeeper/data
+      - zookeeper1_log:/var/lib/zookeeper/log
+    networks: [kafkanet]
+
+  zookeeper2:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper2
+    hostname: zookeeper2
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_SERVER_ID: 2
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SERVERS: zookeeper1:2888:3888;zookeeper2:2888:3888;zookeeper3:2888:3888
+    volumes:
+      - zookeeper2_data:/var/lib/zookeeper/data
+      - zookeeper2_log:/var/lib/zookeeper/log
+    networks: [kafkanet]
+
+  zookeeper3:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper3
+    hostname: zookeeper3
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_SERVER_ID: 3
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SERVERS: zookeeper1:2888:3888;zookeeper2:2888:3888;zookeeper3:2888:3888
+    volumes:
+      - zookeeper3_data:/var/lib/zookeeper/data
+      - zookeeper3_log:/var/lib/zookeeper/log
+    networks: [kafkanet]
+
+  # --- Kafka: 3 brokers ---
+  kafka1:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka1
+    hostname: kafka1
+    restart: unless-stopped
+    depends_on: [zookeeper1, zookeeper2, zookeeper3]
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper1:2181,zookeeper2:2181,zookeeper3:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka1_data:/var/lib/kafka/data
+    networks: [kafkanet]
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka2
+    hostname: kafka2
+    restart: unless-stopped
+    depends_on: [zookeeper1, zookeeper2, zookeeper3]
+    ports:
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper1:2181,zookeeper2:2181,zookeeper3:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka2_data:/var/lib/kafka/data
+    networks: [kafkanet]
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka3
+    hostname: kafka3
+    restart: unless-stopped
+    depends_on: [zookeeper1, zookeeper2, zookeeper3]
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper1:2181,zookeeper2:2181,zookeeper3:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:29092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka3_data:/var/lib/kafka/data
+    networks: [kafkanet]
+
+  # --- Kafka UI ---
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: unless-stopped
+    depends_on: [kafka1, kafka2, kafka3]
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: digitalfix
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper1:2181,zookeeper2:2181,zookeeper3:2181
+    networks: [kafkanet]
+
+  # --- Creación de tópicos (Caso §9) ---
+  # Corre una vez, crea los tópicos y termina. --if-not-exists: se puede repetir sin error.
+  kafka-init-topicos:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka-init-topicos
+    restart: "no"
+    depends_on: [kafka1, kafka2, kafka3]
+    networks: [kafkanet]
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        B=kafka1:29092,kafka2:29092,kafka3:29092
+        echo "Esperando a los brokers..."
+        until kafka-topics --bootstrap-server $$B --list >/dev/null 2>&1; do sleep 3; done
+
+        # Fuente de verdad de eventos de la orden: delete, 7 días
+        kafka-topics --bootstrap-server $$B --create --if-not-exists --topic workorders.events \
+          --partitions 3 --replication-factor 3 \
+          --config cleanup.policy=delete --config retention.ms=604800000
+
+        # Historial quién/qué/cuándo: compact,delete, 30 días
+        kafka-topics --bootstrap-server $$B --create --if-not-exists --topic audit.timeline \
+          --partitions 3 --replication-factor 3 \
+          --config cleanup.policy=compact,delete --config retention.ms=2592000000
+
+        # DLT por consumidor de workorders.events: delete, 14 días
+        for T in workorders.events.audit.DLT workorders.events.report.DLT; do
+          kafka-topics --bootstrap-server $$B --create --if-not-exists --topic $$T \
+            --partitions 3 --replication-factor 3 \
+            --config cleanup.policy=delete --config retention.ms=1209600000
+        done
+
+        echo "Tópicos creados:"
+        kafka-topics --bootstrap-server $$B --list
+
+networks:
+  kafkanet:
+
+volumes:
+  zookeeper1_data:
+  zookeeper1_log:
+  zookeeper2_data:
+  zookeeper2_log:
+  zookeeper3_data:
+  zookeeper3_log:
+  kafka1_data:
+  kafka2_data:
+  kafka3_data:
