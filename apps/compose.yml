@@ -1,6 +1,6 @@
 # infra/apps/compose.yml  ->  ec2-apps
-# Servicios: bff, workorders, catalog, report, notify
-# Broker RabbitMQ en ec2-mq (rabbit1:5672 / rabbit2:5673), resuelto vía extra_hosts.
+# Servicios: bff, workorders, catalog, audit, report, notify, rabbit-admin
+# Brokers y base de datos por entorno; no se crean ni migran recursos externos aquí.
 # Los nombres "catalog" y "workorders" son los que usan las URLs del código.
 # Uso: docker compose --env-file .env up -d --build   (desde infra/apps)
 
@@ -11,14 +11,9 @@ x-base: &base
     driver: json-file
     options: { max-size: "10m", max-file: "3" }
 
-# rabbit1 / rabbit2 -> IP privada de ec2-mq
-x-rabbit-hosts: &rabbit-hosts
-  - "rabbit1:${RABBITMQ_HOST:?Configura RABBITMQ_HOST (IP privada de ec2-mq)}"
-  - "rabbit2:${RABBITMQ_HOST:?Configura RABBITMQ_HOST (IP privada de ec2-mq)}"
-
 # Comunes a los clientes RabbitMQ; usuario/contraseña van por servicio.
 x-rabbit-env: &rabbit-env
-  RABBITMQ_ADDRESSES: rabbit1:5672,rabbit2:5673
+  RABBITMQ_ADDRESSES: ${RABBITMQ_ADDRESSES:?Configura brokers Rabbit alcanzables desde los contenedores}
   RABBITMQ_VHOST: digitalfix
 
 # Nombres iguales a spring.datasource.* de catalog y workorders.
@@ -27,15 +22,24 @@ x-db-env: &db-env
   DB_USERNAME: ${DB_USERNAME:?Configura DB_USERNAME}
   DB_PASSWORD: ${DB_PASSWORD:?Configura DB_PASSWORD}
 
+x-jwt-env: &jwt-env
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${ENTRA_ISSUER:?Configura el emisor de tokens}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES: ${ENTRA_AUDIENCE:?Configura la audiencia}
+
 services:
   bff:
     <<: *base
-    build: ../../digitalfix-ms-bff
+    build: ${BFF_BUILD_CONTEXT:-../../digitalfix-ms-bff}
     image: digitalfix/bff:local
     container_name: bff
     ports:
       - "8080:8080"              # único puerto publicado (API Gateway)
     mem_limit: 512m
+    environment:
+      <<: *jwt-env
+      DIGITALFIX_CATALOG_URL: http://catalog:8081
+      DIGITALFIX_WORKORDERS_URL: http://workorders:8082
+      DIGITALFIX_AUDIT_URL: http://audit:8083
     depends_on:
       workorders: { condition: service_healthy }
       catalog:    { condition: service_healthy }
@@ -48,14 +52,18 @@ services:
 
   workorders:
     <<: *base
-    build: ../../digitalfix-ms-workorders
+    build: ${WORKORDERS_BUILD_CONTEXT:-../../digitalfix-ms-workorders}
     image: digitalfix/workorders:local
     container_name: workorders
     expose: ["8082"]
     mem_limit: 512m
-    extra_hosts: *rabbit-hosts
+    networks: [appnet, messaging, kafka]
     environment:                       # productor
-      <<: [*db-env, *rabbit-env]
+      <<: [*db-env, *rabbit-env, *jwt-env]
+      # localhost dentro del contenedor no es Catalog ni el broker del host.
+      CATALOG_URL: http://catalog:8081
+      DIGITALFIX_KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?Configura los brokers Kafka internos}
       DIGITALFIX_RABBIT_ENABLED: "true"
       RABBITMQ_USERNAME: ${WORKORDERS_RABBITMQ_USERNAME:?Configura usuario Rabbit de Workorders}
       RABBITMQ_PASSWORD: ${WORKORDERS_RABBITMQ_PASSWORD:?Configura contraseña Rabbit de Workorders}
@@ -70,7 +78,7 @@ services:
 
   catalog:
     <<: *base
-    build: ../../digitalfix-ms-catalog
+    build: ${CATALOG_BUILD_CONTEXT:-../../digitalfix-ms-catalog}
     image: digitalfix/catalog:local
     container_name: catalog
     expose: ["8081"]
@@ -86,12 +94,12 @@ services:
 
   notify:                              # consumidor puro: sin puertos
     <<: *base
-    build: ../../digitalfix-ms-notify
+    build: ${NOTIFY_BUILD_CONTEXT:-../../digitalfix-ms-notify}
     image: digitalfix/notify:local
     container_name: notify
     mem_limit: 512m
     stop_grace_period: 60s
-    extra_hosts: *rabbit-hosts
+    networks: [messaging]
     environment:
       <<: *rabbit-env
       RABBITMQ_USERNAME: ${NOTIFY_RABBITMQ_USERNAME:?Configura usuario Rabbit de Notify}
@@ -109,12 +117,12 @@ services:
 
   report:                              # consumidor: sin puertos
     <<: *base
-    build: ../../digitalfix-ms-report
+    build: ${REPORT_BUILD_CONTEXT:-../../digitalfix-ms-report}
     image: digitalfix/report:local
     container_name: report
     mem_limit: 512m
     stop_grace_period: 60s
-    extra_hosts: *rabbit-hosts
+    networks: [messaging]
     environment:
       <<: *rabbit-env
       RABBITMQ_USERNAME: ${REPORT_RABBITMQ_USERNAME:?Configura usuario Rabbit de Report}
@@ -122,9 +130,58 @@ services:
     volumes:
       - report-data:/data
 
+  audit:
+    <<: *base
+    build: ${AUDIT_BUILD_CONTEXT:-../../digitalfix-ms-audit}
+    image: digitalfix/audit:local
+    container_name: audit
+    expose: ["8083"]
+    mem_limit: 512m
+    stop_grace_period: 30s
+    networks: [appnet, kafka]
+    environment:
+      <<: *jwt-env
+      DB_URL: ${AUDIT_DB_URL:?Configura la base de Audit}
+      DB_USERNAME: ${AUDIT_DB_USERNAME:?Configura el usuario de Audit}
+      DB_PASSWORD: ${AUDIT_DB_PASSWORD:?Configura la contraseña de Audit}
+      DIGITALFIX_KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?Configura los brokers Kafka internos}
+      KAFKA_GROUP_ID: audit
+      KAFKA_REINTENTOS: ${KAFKA_REINTENTOS:-3}
+      KAFKA_ESPERA_REINTENTO: ${KAFKA_ESPERA_REINTENTO:-1s}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8083 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  rabbit-admin:
+    <<: *base
+    build: ${RABBIT_ADMIN_BUILD_CONTEXT:-../../digitalfix-ms-rabbit-admin}
+    image: digitalfix/rabbit-admin:local
+    container_name: rabbit-admin
+    mem_limit: 512m
+    networks: [messaging]
+    ports:
+      - "127.0.0.1:8085:8085"
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_USERNAME: ${ADMIN_RABBITMQ_USERNAME:?Configura usuario propio de Rabbit Admin}
+      RABBITMQ_PASSWORD: ${ADMIN_RABBITMQ_PASSWORD:?Configura contraseña de Rabbit Admin}
+      ENTRA_ISSUER: ${ENTRA_ISSUER:?Configura el emisor de tokens}
+      ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?Configura la audiencia}
+
 networks:
   appnet:
     driver: bridge
+  # Reutilizar las redes de los brokers evita levantar clústeres duplicados.
+  messaging:
+    external: true
+    name: ${RABBITMQ_NETWORK_NAME:?Configura la red Rabbit existente}
+  kafka:
+    external: true
+    name: ${KAFKA_NETWORK_NAME:?Configura la red Kafka existente}
 
 # Volúmenes existentes con PDFs e idempotencia. External hace fallar el arranque
 # si faltan, en vez de crear volúmenes vacíos.

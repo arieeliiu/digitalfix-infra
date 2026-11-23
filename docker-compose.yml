@@ -1,0 +1,4 @@
+# Entrada única: conserva las rutas build relativas a apps/compose.yml.
+name: apps
+include:
+  - path: apps/compose.yml
