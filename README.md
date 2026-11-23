@@ -1,5 +1,8 @@
 # DigitalFix — Infraestructura integrada, Evaluación 2
 
+Estado EP5/EP6 consolidado: [validación final y guía de demostración](docs/INTEGRACION_FINAL.md).
+Ese informe distingue las pruebas locales reales de lo pendiente en AWS/Entra/RDS.
+
 El Compose raíz integra BFF, Catalog, Workorders, Audit, Notify, Report y Rabbit Admin.
 RabbitMQ conserva su Compose independiente en [mq/compose.yml](mq/compose.yml).
 Kafka (Zookeeper ×3, Kafka ×3, Kafka UI y tópicos del caso) vive en [kafka/compose.yml](kafka/compose.yml);

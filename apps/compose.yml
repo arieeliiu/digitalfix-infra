@@ -18,6 +18,8 @@ x-rabbit-env: &rabbit-env
 
 # Nombres iguales a spring.datasource.* de catalog y workorders.
 x-db-env: &db-env
+  # Validar evita DDL implícito al arrancar contra una base externa.
+  SPRING_JPA_HIBERNATE_DDL_AUTO: ${JPA_DDL_AUTO:-validate}
   DB_URL: ${DB_URL:?Configura DB_URL}
   DB_USERNAME: ${DB_USERNAME:?Configura DB_USERNAME}
   DB_PASSWORD: ${DB_PASSWORD:?Configura DB_PASSWORD}
@@ -144,6 +146,7 @@ services:
       DB_URL: ${AUDIT_DB_URL:?Configura la base de Audit}
       DB_USERNAME: ${AUDIT_DB_USERNAME:?Configura el usuario de Audit}
       DB_PASSWORD: ${AUDIT_DB_PASSWORD:?Configura la contraseña de Audit}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: ${JPA_DDL_AUTO:-validate}
       DIGITALFIX_KAFKA_ENABLED: "true"
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?Configura los brokers Kafka internos}
       KAFKA_GROUP_ID: audit
